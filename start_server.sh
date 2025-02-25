@@ -12,5 +12,12 @@ source "${SCRIPT_DIR}/venv/bin/activate"
 export OPENHANDS_API_KEY="${API_KEY}"
 
 # Start OpenHands server
-cd "${SCRIPT_DIR}/OpenHands"
-python -m openhands.server.start --config "${CONFIG_DIR}/config.toml"
+# Check if the OpenHands directory exists
+if [ -d "${SCRIPT_DIR}/OpenHands" ]; then
+  cd "${SCRIPT_DIR}/OpenHands"
+  python -m openhands.server.start --config "${CONFIG_DIR}/config.toml"
+else
+  # Use our custom implementation
+  cd "${SCRIPT_DIR}"
+  python -m openhands.server.start --config "${CONFIG_DIR}/config.toml"
+fi
