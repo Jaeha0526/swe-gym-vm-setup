@@ -56,6 +56,12 @@ install_dependencies() {
         python${PYTHON_VERSION}-venv \
         python3-pip
         
+    # Verify python-venv is installed
+    if ! dpkg -l | grep -q "python${PYTHON_VERSION}-venv"; then
+        log "Installing python${PYTHON_VERSION}-venv separately"
+        apt-get install -y python${PYTHON_VERSION}-venv
+    fi
+    
     log "System dependencies installed successfully"
 }
 
@@ -90,16 +96,45 @@ install_docker() {
 setup_python_environment() {
     log "Setting up Python virtual environment..."
     
-    # Create virtual environment
-    python${PYTHON_VERSION} -m venv "${SCRIPT_DIR}/venv"
+    # Check if Python venv module is available
+    if ! python${PYTHON_VERSION} -m venv --help &>/dev/null; then
+        log "ERROR: Python venv module is not available. Installing python${PYTHON_VERSION}-venv package..."
+        apt-get install -y python${PYTHON_VERSION}-venv
+    fi
+    
+    # Create virtual environment with verbose output
+    log "Creating virtual environment at ${SCRIPT_DIR}/venv"
+    python${PYTHON_VERSION} -m venv --clear "${SCRIPT_DIR}/venv"
+    
+    # Check if venv was created
+    if [ ! -d "${SCRIPT_DIR}/venv" ]; then
+        log "ERROR: Failed to create virtual environment"
+        exit 1
+    fi
+    
+    if [ ! -f "${SCRIPT_DIR}/venv/bin/activate" ]; then
+        log "ERROR: Virtual environment created but activate script is missing"
+        exit 1
+    fi
+    
+    log "Virtual environment created successfully"
     
     # Activate virtual environment
+    log "Activating virtual environment"
     source "${SCRIPT_DIR}/venv/bin/activate"
     
+    # Verify activation
+    if [[ -z "$VIRTUAL_ENV" ]]; then
+        log "ERROR: Failed to activate virtual environment"
+        exit 1
+    fi
+    
     # Upgrade pip
+    log "Upgrading pip"
     pip install --upgrade pip
     
     # Install required Python packages
+    log "Installing required Python packages"
     pip install httpx requests pyyaml toml
     
     log "Python environment setup complete"
@@ -110,6 +145,7 @@ install_openhands() {
     
     # Clone OpenHands repository
     if [ ! -d "${SCRIPT_DIR}/OpenHands" ]; then
+        log "Cloning OpenHands repository from ${OPENHANDS_REPO}"
         git clone ${OPENHANDS_REPO} "${SCRIPT_DIR}/OpenHands"
     else
         log "OpenHands repository already exists, pulling latest changes"
@@ -122,11 +158,24 @@ install_openhands() {
     
     # Activate virtual environment if not already active
     if [[ -z "$VIRTUAL_ENV" ]]; then
+        log "Activating virtual environment for OpenHands installation"
         source "${SCRIPT_DIR}/venv/bin/activate"
+        
+        if [[ -z "$VIRTUAL_ENV" ]]; then
+            log "ERROR: Failed to activate virtual environment for OpenHands installation"
+            exit 1
+        fi
     fi
     
     # Install OpenHands dependencies
+    log "Installing OpenHands from source..."
     pip install -e .
+    
+    # Verify installation
+    if ! pip list | grep -q "openhands"; then
+        log "ERROR: OpenHands installation failed"
+        exit 1
+    fi
     
     log "OpenHands installed successfully"
 }
@@ -424,8 +473,20 @@ main() {
     check_requirements
     install_dependencies
     install_docker
+    
+    # Python environment setup
+    log "=========== Starting Python Environment Setup ==========="
     setup_python_environment
+    if [ ! -d "${SCRIPT_DIR}/venv" ] || [ ! -f "${SCRIPT_DIR}/venv/bin/activate" ]; then
+        log "CRITICAL ERROR: Virtual environment was not set up correctly"
+        exit 1
+    fi
+    log "Python virtual environment verified at ${SCRIPT_DIR}/venv"
+    
+    # OpenHands installation
+    log "=========== Starting OpenHands Installation ==========="
     install_openhands
+    
     configure_openhands
     download_docker_images
     create_helper_scripts
