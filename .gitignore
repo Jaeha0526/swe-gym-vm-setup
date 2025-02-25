@@ -1,0 +1,45 @@
+# Python virtual environment
+venv/
+env/
+.env/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Logs
+logs/
+*.log
+setup.log
+
+# Environment configuration
+.env
+
+# Docker files
+.docker/
+
+# IDE files
+.idea/
+.vscode/
+*.sublime-*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# OpenHands repository (will be cloned during setup)
+OpenHands/
+
+# Config directory (contains API keys)
+config/api_key.txt
+
+# Test data
+test_data/
