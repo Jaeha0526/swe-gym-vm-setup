@@ -1,0 +1,14 @@
+# OpenHands Configuration for SWE-Gym VM Setup
+
+[server]
+host = "0.0.0.0"
+port = 8080
+api_key = "f7dc737f7f6ed7683f2a08fa59aa328b"
+
+[runtime]
+type = "eventstream"
+log_level = "info"
+
+[docker]
+default_image = "xingyaoww/sweb.eval.x86_64.django"
+image_pattern = "xingyaoww/sweb.eval.x86_64.{repo}.{issue_id}"
