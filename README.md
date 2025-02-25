@@ -26,7 +26,6 @@ After running these commands, your VM will be ready to accept tool execution req
 ## Components
 
 - `setup.sh`: Main setup script that installs Docker and system dependencies
-- `setup_python_env.sh`: Sets up Python environment and installs OpenHands
 - `start_server.sh`: Starts the OpenHands server
 - `config/`: Configuration files for OpenHands
 - `scripts/`: Utility scripts for Docker image management
