@@ -41,16 +41,13 @@ install_dependencies() {
     # Update package lists
     apt-get update
     
-    # Install required packages
+    # Install required packages (removed Docker-related packages)
     apt-get install -y \
         git \
         curl \
         wget \
-        apt-transport-https \
         ca-certificates \
         gnupg \
-        lsb-release \
-        software-properties-common \
         python${PYTHON_VERSION} \
         python${PYTHON_VERSION}-dev \
         python${PYTHON_VERSION}-venv \
