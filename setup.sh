@@ -332,9 +332,10 @@ EOF
     log "Created download_images.sh script"
 }
 
-# Main execution
+# Main script for Docker setup
 log "Starting Docker setup for SWE-Gym..."
 
+# Call the install_docker function
 install_docker
 if [ $? -eq 0 ]; then
     update_openhands_config
