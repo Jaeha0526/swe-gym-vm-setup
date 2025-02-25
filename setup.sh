@@ -4,7 +4,7 @@ set -e
 # Constants
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 OPENHANDS_REPO="https://github.com/SWE-Gym/OpenHands.git"
-PYTHON_VERSION="3.10"  # OpenHands requires Python 3.10
+PYTHON_VERSION="3.11"  # Using Python 3.11 which is available in Debian Bookworm
 CONFIG_DIR="${SCRIPT_DIR}/config"
 LOG_FILE="${SCRIPT_DIR}/setup.log"
 
