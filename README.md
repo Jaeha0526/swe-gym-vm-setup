@@ -15,10 +15,10 @@ git clone https://github.com/Jaeha0526/swe-gym-vm-setup.git
 cd swe-gym-vm-setup
 
 # Run the setup script
-./setup.sh
+bash ./setup.sh
 
 # Start the OpenHands server (default port: 8080)
-./start_server.sh
+bash ./start_server.sh
 ```
 
 After running these commands, your VM will be ready to accept tool execution requests from external models.
