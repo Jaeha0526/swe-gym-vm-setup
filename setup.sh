@@ -189,8 +189,8 @@ EOF
 create_helper_scripts() {
     log "Creating helper scripts..."
     
-    # Create Docker setup script
-    cat > "${SCRIPT_DIR}/setup_docker.sh" << 'EOF'
+    # Create Docker setup script (for optional installation)
+    cat > "${SCRIPT_DIR}/setup_docker.sh" << 'DOCKER_EOF'
 #!/bin/bash
 set -e
 
@@ -345,7 +345,7 @@ if [ $? -eq 0 ]; then
 else
     log "Docker setup completed with warnings. Some features may not work properly."
 fi
-EOF
+DOCKER_EOF
     chmod +x "${SCRIPT_DIR}/setup_docker.sh"
     
     # Start server script
