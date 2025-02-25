@@ -14,8 +14,11 @@ This repository contains scripts to quickly set up a VM for running SWE-Gym with
 git clone https://github.com/Jaeha0526/swe-gym-vm-setup.git
 cd swe-gym-vm-setup
 
-# Run the setup script
+# Run the setup script to install Docker and system dependencies
 bash ./setup.sh
+
+# Set up Python environment and install OpenHands
+bash ./setup_python_env.sh
 
 # Start the OpenHands server (default port: 8080)
 bash ./start_server.sh
@@ -25,7 +28,8 @@ After running these commands, your VM will be ready to accept tool execution req
 
 ## Components
 
-- `setup.sh`: Main setup script that installs all dependencies
+- `setup.sh`: Main setup script that installs Docker and system dependencies
+- `setup_python_env.sh`: Sets up Python environment and installs OpenHands
 - `start_server.sh`: Starts the OpenHands server
 - `config/`: Configuration files for OpenHands
 - `scripts/`: Utility scripts for Docker image management
