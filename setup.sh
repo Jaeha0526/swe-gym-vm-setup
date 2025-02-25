@@ -67,6 +67,7 @@ install_dependencies() {
 
 install_docker() {
     log "Installing Docker..."
+    DOCKER_ROOTLESS=${DOCKER_ROOTLESS:-0}
     
     # Check if Docker is already installed
     if command -v docker &> /dev/null; then
@@ -105,20 +106,72 @@ install_docker() {
         
         # Try restarting Docker with debug output
         log "Trying to restart Docker service..."
-        systemctl restart docker || {
+        if ! systemctl restart docker; then
             log "Docker restart failed. Debug output:"
-            journalctl -xeu docker.service | tail -n 30 >> "${LOG_FILE}"
-            log "Trying to reinstall Docker..."
-            apt-get remove -y docker-ce docker-ce-cli containerd.io
-            curl -fsSL https://get.docker.com -o get-docker.sh
-            sh get-docker.sh
-            systemctl start docker
-        }
+            journalctl -xeu docker.service | tail -n 30 | tee -a "${LOG_FILE}"
+            
+            # Ask if user wants to try rootless Docker
+            log "Would you like to try Docker in rootless mode instead? (y/n)"
+            read -p "Try Docker rootless mode? (y/n) " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                log "Setting up Docker in rootless mode..."
+                DOCKER_ROOTLESS=1
+                
+                # Install required packages for rootless mode
+                log "Installing dependencies for rootless mode..."
+                apt-get install -y uidmap dbus-user-session
+                
+                # Remove system-wide Docker packages if present
+                log "Removing system Docker packages..."
+                apt-get remove -y docker-ce docker-ce-cli containerd.io docker-compose-plugin || true
+                
+                # Set up rootless Docker
+                log "Running rootless Docker setup..."
+                if [ -n "$SUDO_USER" ]; then
+                    # Setup for the real user (not root)
+                    log "Setting up rootless Docker for user $SUDO_USER"
+                    su - $SUDO_USER -c "curl -fsSL https://get.docker.com/rootless | sh"
+                    
+                    # Add to user's profile to make Docker work on login
+                    echo 'export PATH=/home/$SUDO_USER/bin:$PATH' >> /home/$SUDO_USER/.bashrc
+                    echo 'export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock' >> /home/$SUDO_USER/.bashrc
+                else
+                    # Setup for root (not ideal but might work for testing)
+                    log "Setting up rootless Docker for root user"
+                    curl -fsSL https://get.docker.com/rootless | sh
+                    
+                    # Add to root's profile
+                    echo 'export PATH=/root/bin:$PATH' >> /root/.bashrc
+                    echo 'export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock' >> /root/.bashrc
+                fi
+                
+                # Source these variables for current session
+                if [ -n "$SUDO_USER" ]; then
+                    export PATH=/home/$SUDO_USER/bin:$PATH
+                    export DOCKER_HOST=unix:///run/user/$(id -u $SUDO_USER)/docker.sock
+                else
+                    export PATH=/root/bin:$PATH
+                    export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
+                fi
+                
+                log "Rootless Docker setup complete. You may need to log out and back in for all settings to take effect."
+            else
+                log "Skipping rootless Docker setup. Attempting standard reinstall..."
+                log "Trying to reinstall Docker..."
+                apt-get remove -y docker-ce docker-ce-cli containerd.io || true
+                curl -fsSL https://get.docker.com -o get-docker.sh
+                sh get-docker.sh
+                systemctl start docker || log "Docker still not working after reinstall"
+            fi
+        fi
     fi
     
-    # Final attempt to enable Docker service
-    log "Enabling Docker service to start on boot..."
-    systemctl enable docker || log "Warning: Could not enable Docker service"
+    # Try enabling Docker service (for non-rootless mode)
+    if [ "$DOCKER_ROOTLESS" -eq 0 ]; then
+        log "Enabling Docker service to start on boot..."
+        systemctl enable docker || log "Warning: Could not enable Docker service"
+    fi
     
     # Test Docker installation with option to skip
     log "Testing Docker installation (this may be skipped if Docker is not working)..."
@@ -132,22 +185,32 @@ install_docker() {
         # Try up to 2 times with a short delay
         for attempt in {1..2}; do
             log "Docker test attempt ${attempt}..."
-            if timeout 20 docker run --rm hello-world 2>&1 | tee -a "${LOG_FILE}"; then
+            if timeout 30 docker run --rm hello-world 2>&1 | tee -a "${LOG_FILE}"; then
                 log "Docker is working correctly"
                 return 0
             else
-                log "Docker test attempt ${attempt} failed, waiting before retry..."
+                log "Docker test attempt ${attempt} failed"
+                if [ "$DOCKER_ROOTLESS" -eq 1 ]; then
+                    log "For rootless Docker, make sure environment variables are set:"
+                    log "export PATH=/home/$SUDO_USER/bin:\$PATH"
+                    log "export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock"
+                fi
                 sleep 5
             fi
         done
         
-        log "WARNING: Docker test failed. Do you want to continue setup anyway? (y/n)"
-        read -p "Continue without working Docker? (y/n) " -n 1 -r
+        log "WARNING: Docker test failed. You have the following options:"
+        log "1. Continue setup without Docker (some features won't work)"
+        log "2. Abort setup and troubleshoot Docker issues"
+        
+        read -p "Do you want to continue setup without Docker? (y/n) " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             log "Setup aborted by user. Please fix Docker issues before continuing."
-            log "You can check Docker status with: systemctl status docker"
-            log "And check logs with: journalctl -xeu docker.service"
+            log "Common troubleshooting steps:"
+            log "1. Check Docker status: systemctl status docker"
+            log "2. View Docker logs: journalctl -xeu docker.service"
+            log "3. For rootless Docker: make sure the environment variables are set correctly"
             exit 1
         fi
         
@@ -259,7 +322,65 @@ configure_openhands() {
     API_KEY=$(cat "${CONFIG_DIR}/api_key.txt")
     
     # Create OpenHands configuration
-    cat > "${CONFIG_DIR}/config.toml" << EOF
+    # Check if Docker is available or should be skipped
+    if [ "${SKIP_DOCKER:-0}" -eq 1 ]; then
+        log "Docker is not available, configuring OpenHands without Docker support"
+        cat > "${CONFIG_DIR}/config.toml" << EOF
+# OpenHands Configuration for SWE-Gym VM Setup (No Docker Mode)
+
+[server]
+host = "0.0.0.0"
+port = 8080
+api_key = "${API_KEY}"
+
+[runtime]
+type = "eventstream"
+log_level = "info"
+
+# Docker configuration is commented out due to Docker not being available
+# [docker]
+# default_image = "xingyaoww/sweb.eval.x86_64.django"
+# image_pattern = "xingyaoww/sweb.eval.x86_64.{repo}.{issue_id}"
+
+# Using local execution instead
+[local]
+enable = true
+EOF
+    else
+        # Check if we're using rootless Docker
+        if [ "${DOCKER_ROOTLESS:-0}" -eq 1 ]; then
+            log "Configuring OpenHands with rootless Docker support"
+            # For rootless Docker, we need to set the Docker socket path
+            if [ -n "$SUDO_USER" ]; then
+                DOCKER_SOCKET="unix:///run/user/$(id -u $SUDO_USER)/docker.sock"
+            else
+                DOCKER_SOCKET="unix:///run/user/$(id -u)/docker.sock"
+            fi
+            
+            cat > "${CONFIG_DIR}/config.toml" << EOF
+# OpenHands Configuration for SWE-Gym VM Setup (Rootless Docker Mode)
+
+[server]
+host = "0.0.0.0"
+port = 8080
+api_key = "${API_KEY}"
+
+[runtime]
+type = "eventstream"
+log_level = "info"
+
+[docker]
+default_image = "xingyaoww/sweb.eval.x86_64.django"
+image_pattern = "xingyaoww/sweb.eval.x86_64.{repo}.{issue_id}"
+socket = "${DOCKER_SOCKET}"
+
+# Local execution as fallback
+[local]
+enable = true
+EOF
+        else
+            # Normal Docker configuration
+            cat > "${CONFIG_DIR}/config.toml" << EOF
 # OpenHands Configuration for SWE-Gym VM Setup
 
 [server]
@@ -274,7 +395,13 @@ log_level = "info"
 [docker]
 default_image = "xingyaoww/sweb.eval.x86_64.django"
 image_pattern = "xingyaoww/sweb.eval.x86_64.{repo}.{issue_id}"
+
+# Local execution as fallback
+[local]
+enable = true
 EOF
+        fi
+    fi
     
     log "OpenHands configuration complete"
 }
