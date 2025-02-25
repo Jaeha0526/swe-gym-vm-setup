@@ -73,24 +73,47 @@ install_docker() {
         log "Docker is already installed"
     else
         # Install Docker using the official script
+        log "Downloading Docker installation script..."
         curl -fsSL https://get.docker.com -o get-docker.sh
+        log "Running Docker installation script..."
         sh get-docker.sh
         
         # Add current user to docker group
+        log "Adding user to docker group..."
         usermod -aG docker $SUDO_USER
         
-        # Start and enable Docker service
-        systemctl start docker
-        systemctl enable docker
-        
-        log "Docker installed successfully"
+        log "Docker installation completed"
     fi
+    
+    # Make sure Docker service is running
+    log "Ensuring Docker service is running..."
+    if ! systemctl is-active --quiet docker; then
+        log "Starting Docker service..."
+        systemctl start docker
+    fi
+    
+    log "Enabling Docker service to start on boot..."
+    systemctl enable docker
     
     # Test Docker installation
     log "Testing Docker installation..."
-    docker run --rm hello-world
+    # Try up to 3 times with increasing delays
+    for attempt in {1..3}; do
+        log "Docker test attempt ${attempt}..."
+        if docker run --rm hello-world 2>&1 | tee -a "${LOG_FILE}"; then
+            log "Docker is working correctly"
+            return 0
+        else
+            log "Docker test attempt ${attempt} failed, waiting before retry..."
+            sleep $((attempt * 5))
+        fi
+    done
     
-    log "Docker is working correctly"
+    log "WARNING: Docker test failed after 3 attempts. Continuing setup, but Docker may not be working correctly."
+    log "You may need to run 'systemctl start docker' and check Docker's status manually after setup completes."
+    
+    # Continue anyway to avoid script termination
+    return 0
 }
 
 setup_python_environment() {
