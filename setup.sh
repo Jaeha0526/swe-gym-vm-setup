@@ -207,12 +207,11 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "${LOG_FILE}"
 }
 
-check_root() {
-    if [[ $EUID -ne 0 ]]; then
-        log "This script must be run as root or with sudo"
-        exit 1
-    fi
-}
+# Check if running as root or with sudo
+if [[ $EUID -ne 0 ]]; then
+    echo "This script must be run as root or with sudo"
+    exit 1
+fi
 
 install_docker() {
     log "Installing Docker..."
@@ -336,23 +335,18 @@ EOF
     log "Created download_images.sh script"
 }
 
-main() {
-    log "Starting Docker setup for SWE-Gym..."
-    
-    check_root
-    install_docker
-    
-    if [ $? -eq 0 ]; then
-        update_openhands_config
-        download_docker_images
-        create_download_script
-        log "Docker setup completed successfully!"
-    else
-        log "Docker setup completed with warnings. Some features may not work properly."
-    fi
-}
+# Main execution
+log "Starting Docker setup for SWE-Gym..."
 
-main
+install_docker
+if [ $? -eq 0 ]; then
+    update_openhands_config
+    download_docker_images
+    create_download_script
+    log "Docker setup completed successfully!"
+else
+    log "Docker setup completed with warnings. Some features may not work properly."
+fi
 EOF
     chmod +x "${SCRIPT_DIR}/setup_docker.sh"
     
