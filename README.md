@@ -11,7 +11,7 @@ This repository contains scripts to quickly set up a VM for running SWE-Gym with
 
 ```bash
 # Clone this repository in your VM
-git clone https://github.com/your-username/swe-gym-vm-setup.git
+git clone https://github.com/Jaeha0526/swe-gym-vm-setup.git
 cd swe-gym-vm-setup
 
 # Run the setup script
