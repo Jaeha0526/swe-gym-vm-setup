@@ -17,9 +17,6 @@ cd swe-gym-vm-setup
 # Run the setup script to install Docker and system dependencies
 bash ./setup.sh
 
-# Set up Python environment and install OpenHands
-bash ./setup_python_env.sh
-
 # Start the OpenHands server (default port: 8080)
 bash ./start_server.sh
 ```
