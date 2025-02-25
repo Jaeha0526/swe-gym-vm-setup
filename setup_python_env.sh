@@ -51,8 +51,19 @@ install_openhands() {
         source "${SCRIPT_DIR}/venv/bin/activate"
     fi
     
-    # Install OpenHands dependencies
-    pip install -e .
+    # Check if requirements.txt exists
+    if [ -f "requirements.txt" ]; then
+        log "Installing from requirements.txt"
+        pip install -r requirements.txt
+    fi
+    
+    # Try to install dependencies directly from GitHub
+    log "Installing OpenHands ACI dependency"
+    pip install "git+https://github.com/SWE-Gym/openhands-aci.git@main"
+    
+    # Install OpenHands in development mode
+    log "Installing OpenHands"
+    pip install -e . --no-dependencies
     
     log "OpenHands installed successfully"
 }
