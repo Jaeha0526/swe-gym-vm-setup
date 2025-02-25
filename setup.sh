@@ -65,40 +65,6 @@ install_dependencies() {
     log "System dependencies installed successfully"
 }
 
-install_docker() {
-    log "Installing Docker..."
-    DOCKER_ROOTLESS=${DOCKER_ROOTLESS:-0}
-    
-    # Check if Docker is already installed
-    if command -v docker &> /dev/null; then
-        log "Docker is already installed"
-    else
-        # Install Docker using the official script
-        log "Downloading Docker installation script..."
-        curl -fsSL https://get.docker.com -o get-docker.sh
-        log "Running Docker installation script..."
-        sh get-docker.sh
-        
-        # Add current user to docker group
-        log "Adding user to docker group..."
-        usermod -aG docker $SUDO_USER
-        
-        log "Docker installation completed"
-    fi
-    
-    # Debug Docker service status
-    log "Checking Docker service status..."
-    systemctl status docker || true
-    
-    # Skip Docker tests and assume Docker is not functional
-    log "Skipping Docker tests as requested"
-    export SKIP_DOCKER=1
-    log "Assuming Docker is not functional for this setup"
-    log "You can manually verify Docker functionality after setup if needed"
-    
-    return 0
-}
-
 setup_python_environment() {
     log "Setting up Python virtual environment..."
     
@@ -198,11 +164,12 @@ configure_openhands() {
     fi
     API_KEY=$(cat "${CONFIG_DIR}/api_key.txt")
     
-    # Create OpenHands configuration
-    # Check if Docker is available or should be skipped
-    if [ "${SKIP_DOCKER:-0}" -eq 1 ]; then
-        log "Docker is not available, configuring OpenHands without Docker support"
-        cat > "${CONFIG_DIR}/config.toml" << EOF
+    # Skip Docker by default
+    export SKIP_DOCKER=1
+    
+    # Create OpenHands configuration for local execution
+    log "Configuring OpenHands for local execution (without Docker)"
+    cat > "${CONFIG_DIR}/config.toml" << EOF
 # OpenHands Configuration for SWE-Gym VM Setup (No Docker Mode)
 
 [server]
@@ -214,50 +181,93 @@ api_key = "${API_KEY}"
 type = "eventstream"
 log_level = "info"
 
-# Docker configuration is commented out due to Docker not being available
-# [docker]
-# default_image = "xingyaoww/sweb.eval.x86_64.django"
-# image_pattern = "xingyaoww/sweb.eval.x86_64.{repo}.{issue_id}"
-
-# Using local execution instead
+# Using local execution mode
 [local]
 enable = true
 EOF
+    
+    log "OpenHands configuration complete"
+}
+
+create_helper_scripts() {
+    log "Creating helper scripts..."
+    
+    # Create Docker setup script
+    cat > "${SCRIPT_DIR}/setup_docker.sh" << 'EOF'
+#!/bin/bash
+set -e
+
+# Constants
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+CONFIG_DIR="${SCRIPT_DIR}/config"
+LOG_FILE="${SCRIPT_DIR}/docker_setup.log"
+
+# Log function
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "${LOG_FILE}"
+}
+
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        log "This script must be run as root or with sudo"
+        exit 1
+    fi
+}
+
+install_docker() {
+    log "Installing Docker..."
+    
+    # Check if Docker is already installed
+    if command -v docker &> /dev/null; then
+        log "Docker is already installed"
     else
-        # Check if we're using rootless Docker
-        if [ "${DOCKER_ROOTLESS:-0}" -eq 1 ]; then
-            log "Configuring OpenHands with rootless Docker support"
-            # For rootless Docker, we need to set the Docker socket path
-            if [ -n "$SUDO_USER" ]; then
-                DOCKER_SOCKET="unix:///run/user/$(id -u $SUDO_USER)/docker.sock"
-            else
-                DOCKER_SOCKET="unix:///run/user/$(id -u)/docker.sock"
-            fi
-            
-            cat > "${CONFIG_DIR}/config.toml" << EOF
-# OpenHands Configuration for SWE-Gym VM Setup (Rootless Docker Mode)
+        # Install Docker using the official script
+        log "Downloading Docker installation script..."
+        curl -fsSL https://get.docker.com -o get-docker.sh
+        log "Running Docker installation script..."
+        sh get-docker.sh
+        
+        # Add current user to docker group
+        log "Adding user to docker group..."
+        usermod -aG docker $SUDO_USER
+        
+        log "Docker installation completed"
+    fi
+    
+    # Try to start Docker service
+    log "Starting Docker service..."
+    systemctl start docker || log "WARNING: Failed to start Docker service"
+    
+    # Enable Docker service
+    log "Enabling Docker service to start on boot..."
+    systemctl enable docker || log "WARNING: Failed to enable Docker service"
+    
+    # Test Docker installation
+    log "Testing Docker installation..."
+    if docker run --rm hello-world; then
+        log "Docker is working correctly"
+    else
+        log "WARNING: Docker test failed. Please check Docker installation manually."
+        return 1
+    fi
+    
+    return 0
+}
 
-[server]
-host = "0.0.0.0"
-port = 8080
-api_key = "${API_KEY}"
-
-[runtime]
-type = "eventstream"
-log_level = "info"
-
-[docker]
-default_image = "xingyaoww/sweb.eval.x86_64.django"
-image_pattern = "xingyaoww/sweb.eval.x86_64.{repo}.{issue_id}"
-socket = "${DOCKER_SOCKET}"
-
-# Local execution as fallback
-[local]
-enable = true
-EOF
-        else
-            # Normal Docker configuration
-            cat > "${CONFIG_DIR}/config.toml" << EOF
+update_openhands_config() {
+    log "Updating OpenHands configuration to use Docker..."
+    
+    # Check if config file exists
+    if [ ! -f "${CONFIG_DIR}/config.toml" ]; then
+        log "ERROR: OpenHands configuration file not found. Run setup.sh first."
+        exit 1
+    fi
+    
+    # Get API key
+    API_KEY=$(cat "${CONFIG_DIR}/api_key.txt")
+    
+    # Update configuration to use Docker
+    cat > "${CONFIG_DIR}/config.toml" << EOF
 # OpenHands Configuration for SWE-Gym VM Setup
 
 [server]
@@ -277,29 +287,17 @@ image_pattern = "xingyaoww/sweb.eval.x86_64.{repo}.{issue_id}"
 [local]
 enable = true
 EOF
-        fi
-    fi
     
-    log "OpenHands configuration complete"
+    log "OpenHands configuration updated to use Docker"
 }
 
 download_docker_images() {
     log "Downloading initial Docker images..."
     
-    # Skip if Docker is not working
-    if [ "${SKIP_DOCKER:-0}" -eq 1 ]; then
-        log "Skipping Docker image downloads because Docker is not functioning"
-        return 0
-    fi
-    
     # Download essential Docker images
-    # We start with a small set to make the initial setup faster
-    # More images can be downloaded later using the download_images.sh script
-    
     log "Pulling Docker image: xingyaoww/sweb.eval.x86_64.django"
     if ! docker pull xingyaoww/sweb.eval.x86_64.django; then
         log "WARNING: Failed to pull Django image. This is needed for OpenHands to function properly."
-        log "You can try pulling it manually later with: docker pull xingyaoww/sweb.eval.x86_64.django"
     fi
     
     log "Pulling Docker image: xingyaoww/sweb.eval.x86_64.matplotlib"
@@ -307,13 +305,12 @@ download_docker_images() {
         log "WARNING: Failed to pull Matplotlib image"
     fi
     
-    log "Initial Docker images download attempted"
+    log "Initial Docker images downloaded"
 }
 
-create_helper_scripts() {
-    log "Creating helper scripts..."
-    
+create_download_script() {
     # Download images script
+    mkdir -p "${SCRIPT_DIR}/scripts"
     cat > "${SCRIPT_DIR}/scripts/download_images.sh" << 'EOF'
 #!/bin/bash
 set -e
@@ -336,6 +333,28 @@ done
 echo "All requested images downloaded successfully"
 EOF
     chmod +x "${SCRIPT_DIR}/scripts/download_images.sh"
+    log "Created download_images.sh script"
+}
+
+main() {
+    log "Starting Docker setup for SWE-Gym..."
+    
+    check_root
+    install_docker
+    
+    if [ $? -eq 0 ]; then
+        update_openhands_config
+        download_docker_images
+        create_download_script
+        log "Docker setup completed successfully!"
+    else
+        log "Docker setup completed with warnings. Some features may not work properly."
+    fi
+}
+
+main
+EOF
+    chmod +x "${SCRIPT_DIR}/setup_docker.sh"
     
     # Start server script
     cat > "${SCRIPT_DIR}/start_server.sh" << 'EOF'
@@ -552,11 +571,10 @@ EOF
 main() {
     mkdir -p "${SCRIPT_DIR}/scripts"
     
-    log "Starting SWE-Gym VM setup..."
+    log "Starting SWE-Gym VM setup (Part 1: Core Setup)..."
     
     check_requirements
     install_dependencies
-    install_docker
     
     # Python environment setup
     log "=========== Starting Python Environment Setup ==========="
@@ -572,12 +590,13 @@ main() {
     install_openhands
     
     configure_openhands
-    download_docker_images
     create_helper_scripts
     setup_documentation
     
-    log "SWE-Gym VM setup completed successfully!"
+    log "SWE-Gym VM setup (Part 1) completed successfully!"
     log "Your API key is: $(cat ${CONFIG_DIR}/api_key.txt)"
+    log ""
+    log "To install Docker (optional), run: sudo ./setup_docker.sh"
     log "To start the OpenHands server, run: ./start_server.sh"
 }
 
