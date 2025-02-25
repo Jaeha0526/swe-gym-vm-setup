@@ -85,34 +85,77 @@ install_docker() {
         log "Docker installation completed"
     fi
     
-    # Make sure Docker service is running
-    log "Ensuring Docker service is running..."
+    # Debug Docker service status
+    log "Checking Docker service status..."
+    systemctl status docker || true
+    
+    # Try to fix Docker service if it's not running
+    log "Checking for Docker service issues..."
     if ! systemctl is-active --quiet docker; then
-        log "Starting Docker service..."
-        systemctl start docker
+        log "Docker service is not running. Attempting fixes..."
+        
+        # Check if docker.sock exists and has correct permissions
+        log "Checking docker.sock..."
+        if [ ! -S /var/run/docker.sock ]; then
+            log "docker.sock does not exist or is not a socket"
+        else
+            log "docker.sock exists. Setting permissions..."
+            chmod 666 /var/run/docker.sock
+        fi
+        
+        # Try restarting Docker with debug output
+        log "Trying to restart Docker service..."
+        systemctl restart docker || {
+            log "Docker restart failed. Debug output:"
+            journalctl -xeu docker.service | tail -n 30 >> "${LOG_FILE}"
+            log "Trying to reinstall Docker..."
+            apt-get remove -y docker-ce docker-ce-cli containerd.io
+            curl -fsSL https://get.docker.com -o get-docker.sh
+            sh get-docker.sh
+            systemctl start docker
+        }
     fi
     
+    # Final attempt to enable Docker service
     log "Enabling Docker service to start on boot..."
-    systemctl enable docker
+    systemctl enable docker || log "Warning: Could not enable Docker service"
     
-    # Test Docker installation
-    log "Testing Docker installation..."
-    # Try up to 3 times with increasing delays
-    for attempt in {1..3}; do
-        log "Docker test attempt ${attempt}..."
-        if docker run --rm hello-world 2>&1 | tee -a "${LOG_FILE}"; then
-            log "Docker is working correctly"
-            return 0
-        else
-            log "Docker test attempt ${attempt} failed, waiting before retry..."
-            sleep $((attempt * 5))
+    # Test Docker installation with option to skip
+    log "Testing Docker installation (this may be skipped if Docker is not working)..."
+    
+    # Set a flag to indicate if we want to continue without Docker
+    SKIP_DOCKER_TEST=${SKIP_DOCKER_TEST:-0}
+    
+    if [ "$SKIP_DOCKER_TEST" -eq 1 ]; then
+        log "Skipping Docker test as requested"
+    else
+        # Try up to 2 times with a short delay
+        for attempt in {1..2}; do
+            log "Docker test attempt ${attempt}..."
+            if timeout 20 docker run --rm hello-world 2>&1 | tee -a "${LOG_FILE}"; then
+                log "Docker is working correctly"
+                return 0
+            else
+                log "Docker test attempt ${attempt} failed, waiting before retry..."
+                sleep 5
+            fi
+        done
+        
+        log "WARNING: Docker test failed. Do you want to continue setup anyway? (y/n)"
+        read -p "Continue without working Docker? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log "Setup aborted by user. Please fix Docker issues before continuing."
+            log "You can check Docker status with: systemctl status docker"
+            log "And check logs with: journalctl -xeu docker.service"
+            exit 1
         fi
-    done
+        
+        log "Continuing setup with non-functional Docker. Some features may not work."
+        # Set environment variable to indicate Docker should be skipped
+        export SKIP_DOCKER=1
+    fi
     
-    log "WARNING: Docker test failed after 3 attempts. Continuing setup, but Docker may not be working correctly."
-    log "You may need to run 'systemctl start docker' and check Docker's status manually after setup completes."
-    
-    # Continue anyway to avoid script termination
     return 0
 }
 
@@ -239,14 +282,28 @@ EOF
 download_docker_images() {
     log "Downloading initial Docker images..."
     
+    # Skip if Docker is not working
+    if [ "${SKIP_DOCKER:-0}" -eq 1 ]; then
+        log "Skipping Docker image downloads because Docker is not functioning"
+        return 0
+    fi
+    
     # Download essential Docker images
     # We start with a small set to make the initial setup faster
     # More images can be downloaded later using the download_images.sh script
     
-    docker pull xingyaoww/sweb.eval.x86_64.django
-    docker pull xingyaoww/sweb.eval.x86_64.matplotlib
+    log "Pulling Docker image: xingyaoww/sweb.eval.x86_64.django"
+    if ! docker pull xingyaoww/sweb.eval.x86_64.django; then
+        log "WARNING: Failed to pull Django image. This is needed for OpenHands to function properly."
+        log "You can try pulling it manually later with: docker pull xingyaoww/sweb.eval.x86_64.django"
+    fi
     
-    log "Initial Docker images downloaded"
+    log "Pulling Docker image: xingyaoww/sweb.eval.x86_64.matplotlib"
+    if ! docker pull xingyaoww/sweb.eval.x86_64.matplotlib; then
+        log "WARNING: Failed to pull Matplotlib image"
+    fi
+    
+    log "Initial Docker images download attempted"
 }
 
 create_helper_scripts() {
